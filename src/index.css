@@ -398,7 +398,8 @@ input[type='range'] {
 .secondary-button,
 .ghost-button,
 .danger-button,
-.icon-button {
+.icon-button,
+.text-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -435,6 +436,19 @@ input[type='range'] {
 .ghost-button {
   color: var(--ink);
   background: #eef7f4;
+}
+
+.text-button {
+  width: fit-content;
+  min-height: 36px;
+  margin-top: 10px;
+  padding: 0;
+  color: var(--teal-dark);
+  background: transparent;
+}
+
+.text-button:hover {
+  color: var(--ink);
 }
 
 .danger-button,
@@ -736,7 +750,6 @@ th {
 }
 
 .guide-copy p,
-.soft-check p,
 .privacy-note,
 .details-copy p {
   margin: 0;
@@ -785,24 +798,49 @@ th {
   font-size: 13px;
 }
 
-.guide-actions {
+.next-action-card {
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr);
+  gap: 18px;
+  align-items: center;
   margin-top: 14px;
+  padding: 16px;
+  border: 1px solid rgba(15, 108, 98, 0.12);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  box-shadow: 0 12px 30px rgba(24, 76, 64, 0.06);
 }
 
-.soft-check {
+.next-action-card strong {
+  display: block;
+  margin: 5px 0;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.next-action-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.next-action-controls {
   display: grid;
-  gap: 8px;
+  gap: 9px;
 }
 
-.soft-check .toggle {
+.next-action-controls .toggle {
   justify-content: flex-start;
   padding: 0 12px;
 }
 
-.calm-buttons {
-  margin-top: 0;
+.next-action-controls .primary-button {
+  min-height: 48px;
+  font-size: 16px;
+}
+
+.next-action-controls p {
+  font-size: 13px;
 }
 
 .calm-path {
@@ -816,6 +854,15 @@ th {
   border-color: rgba(15, 108, 98, 0.1);
   background: transparent;
   box-shadow: none;
+}
+
+.calm-path .step-item.current {
+  border-color: rgba(15, 108, 98, 0.2);
+  background: var(--soft-blue);
+}
+
+.calm-path .step-item.current > span {
+  background: var(--teal);
 }
 
 .calm-aside {
@@ -1127,7 +1174,8 @@ th {
   .calm-guide,
   .entry-toolbar,
   .quick-save-note,
-  .reminder-box {
+  .reminder-box,
+  .next-action-card {
     grid-template-columns: 1fr;
   }
 

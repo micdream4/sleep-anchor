@@ -2,6 +2,7 @@ import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   Bell,
   CalendarDays,
   Check,
@@ -268,7 +269,7 @@ function App() {
             <div className="calm-guide">
               <div className="guide-copy">
                 <span className="eyebrow">CBT-I 的第一步</span>
-                <h2>先记录 7 天，让计划按真实睡眠来。</h2>
+                <h2>下一步：开始记录一晚睡眠。</h2>
                 <p>CBT-I 是针对失眠的非药物方法。这里先做最基础的一步：用睡眠日记看清睡眠效率、起床锚点和下周窗口。</p>
                 <div className="reason-pills" aria-label="为什么需要记录">
                   <span>少猜：到底睡了多久</span>
@@ -282,28 +283,31 @@ function App() {
               </div>
             </div>
 
-            <div className="guide-actions">
-              <div className="soft-check">
-                <Toggle label="我今天没有严重日间嗜睡或驾驶风险" checked={state.onboarding.safetyChecked} onChange={(value) => updateOnboarding('safetyChecked', value)} />
-                {!state.onboarding.safetyChecked && <p>先确认这一项，按钮才会打开。困到影响驾驶或操作设备时，先不要做睡眠窗口训练。</p>}
+            <div className="next-action-card" aria-label="下一步">
+              <div>
+                <span className="eyebrow">现在做什么</span>
+                <strong>点开始记录，只填今晚或昨晚的核心时间。</strong>
+                <p>接下来 7 天每天补一条；第 8 天再看睡眠窗口。时间不精确也可以先估。</p>
               </div>
-              <div className="button-row calm-buttons">
+              <div className="next-action-controls">
+                <Toggle label="我今天没有严重日间嗜睡或驾驶风险" checked={state.onboarding.safetyChecked} onChange={(value) => updateOnboarding('safetyChecked', value)} />
                 <button type="button" className="primary-button" disabled={!state.onboarding.safetyChecked} onClick={beginChallenge}>
-                  <Check size={18} />
-                  {state.onboarding.challengeStartedAt ? '继续记录' : '开始快记'}
+                  <ArrowRight size={18} />
+                  {state.onboarding.challengeStartedAt ? '继续记录' : '开始记录'}
                 </button>
-                <button type="button" className="secondary-button" onClick={loadDemo}>
-                  <Sparkles size={18} />
-                  看示例
-                </button>
+                {!state.onboarding.safetyChecked && <p>先勾选安全确认，按钮就会打开。</p>}
               </div>
             </div>
 
             <div className="calm-path" aria-label="开始路径">
-              <StepItem index="1" title="明早补记" text="只估上床、起床和清醒时长。" />
-              <StepItem index="2" title="先不改变" text={`尽量接近 ${state.settings.fixedWakeTime} 起床即可。`} />
-              <StepItem index="3" title="第 8 天再看计划" text="到时再决定上床窗口。" />
+              <StepItem index="1" title="现在" text="开始记录一晚睡眠。" current />
+              <StepItem index="2" title="接下来 7 天" text={`照常睡，尽量 ${state.settings.fixedWakeTime} 起床。`} />
+              <StepItem index="3" title="第 8 天" text="根据基线生成睡眠窗口。" />
             </div>
+            <button type="button" className="text-button" onClick={loadDemo}>
+              <Sparkles size={16} />
+              先看示例
+            </button>
           </section>
 
           <aside className="calm-aside">
@@ -788,9 +792,9 @@ function InlineMetric({ label, value }: { label: string; value: string }) {
   )
 }
 
-function StepItem({ index, title, text }: { index: string; title: string; text: string }) {
+function StepItem({ index, title, text, current = false }: { index: string; title: string; text: string; current?: boolean }) {
   return (
-    <article className="step-item">
+    <article className={current ? 'step-item current' : 'step-item'}>
       <span>{index}</span>
       <div>
         <strong>{title}</strong>
