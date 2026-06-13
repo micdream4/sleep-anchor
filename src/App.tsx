@@ -82,6 +82,7 @@ function App() {
   const todayRecorded = cadence.at(-1)?.recorded ?? false
   const latestMetrics = useMemo(() => recent.map((entry) => ({ entry, metrics: calculateEntryMetrics(entry) })), [recent])
   const isBaselinePhase = plan.status !== 'ready'
+  const isQuietStart = activeTab === 'start' && sorted.length === 0
   const windowTile = isBaselinePhase
     ? { label: '基线进度', value: `${progress.recordedDays}/7 天`, detail: '先记录，不调整' }
     : { label: '本周窗口', value: formatDuration(state.settings.activeWindowMin), detail: `${plan.activeBedtime} - ${state.settings.fixedWakeTime}` }
@@ -243,76 +244,89 @@ function App() {
         </nav>
       </header>
 
-      <section className="dashboard-band">
-        <MetricTile icon={<Sun />} label="起床锚点" value={state.settings.fixedWakeTime} detail={`${plan.anchorHitDays}/7 天命中`} />
-        <MetricTile icon={<Moon />} label={windowTile.label} value={windowTile.value} detail={windowTile.detail} />
-        <MetricTile icon={<Activity />} label="近 7 天效率" value={plan.recordsUsed ? formatPercent(plan.avgEfficiency) : '--'} detail={plan.recordsUsed ? `${plan.recordsUsed} 条记录` : '等待记录'} />
-        <MetricTile icon={<CalendarDays />} label="平均睡眠" value={plan.recordsUsed ? formatDuration(plan.avgSleepMin) : '--'} detail="TST，不含小睡" />
-      </section>
+      {!isQuietStart && (
+        <>
+          <section className="dashboard-band">
+            <MetricTile icon={<Sun />} label="起床锚点" value={state.settings.fixedWakeTime} detail={`${plan.anchorHitDays}/7 天命中`} />
+            <MetricTile icon={<Moon />} label={windowTile.label} value={windowTile.value} detail={windowTile.detail} />
+            <MetricTile icon={<Activity />} label="近 7 天效率" value={plan.recordsUsed ? formatPercent(plan.avgEfficiency) : '--'} detail={plan.recordsUsed ? `${plan.recordsUsed} 条记录` : '等待记录'} />
+            <MetricTile icon={<CalendarDays />} label="平均睡眠" value={plan.recordsUsed ? formatDuration(plan.avgSleepMin) : '--'} detail="TST，不含小睡" />
+          </section>
 
-      <section className="notice-row" aria-live="polite">
-        <ShieldCheck size={18} />
-        <span>{notice}</span>
-      </section>
+          <section className="notice-row" aria-live="polite">
+            <ShieldCheck size={18} />
+            <span>{notice}</span>
+          </section>
+        </>
+      )}
 
       {activeTab === 'start' && (
-        <section className="workspace two-col">
-          <section className="panel primary-panel">
-            <PanelTitle icon={<ClipboardList />} title="7 天睡眠基线挑战" detail="第一周只记录，不急着改变作息" />
-            <div className="start-hero">
-              <div>
-                <span className="eyebrow">当前进度</span>
-                <strong>{progress.statusText}</strong>
-                <p>{progress.nextAction}</p>
+        <section className={isQuietStart ? 'workspace calm-start' : 'workspace two-col'}>
+          <section className="panel primary-panel onboarding-panel">
+            <div className="calm-guide">
+              <div className="guide-copy">
+                <span className="eyebrow">先别急着调整睡眠</span>
+                <h2>今晚照常睡，明早记一条就好。</h2>
+                <p>Sleep Anchor 会先帮你收集 7 天真实基线。满 7 条后，再给出睡眠窗口和本周重点。</p>
               </div>
-              <div className="progress-ring" aria-label={`7 天挑战进度 ${progress.percent}%`}>
-                <span>{progress.recordedDays}/7</span>
+              <div className="guide-progress" aria-label={`7 天挑战进度 ${progress.percent}%`}>
+                <strong>{progress.recordedDays}/7</strong>
+                <span>{progress.recordedDays ? '已记录' : '从第一条开始'}</span>
               </div>
             </div>
-            <div className="progress-track" aria-hidden="true">
-              <span style={{ width: `${progress.percent}%` }} />
+
+            <div className="guide-actions">
+              <div className="soft-check">
+                <Toggle label="我今天没有严重日间嗜睡或驾驶风险" checked={state.onboarding.safetyChecked} onChange={(value) => updateOnboarding('safetyChecked', value)} />
+                {!state.onboarding.safetyChecked && <p>先确认这一项，按钮才会打开。困到影响驾驶或操作设备时，先不要做睡眠窗口训练。</p>}
+              </div>
+              <div className="button-row calm-buttons">
+                <button type="button" className="primary-button" disabled={!state.onboarding.safetyChecked} onClick={beginChallenge}>
+                  <Check size={18} />
+                  {state.onboarding.challengeStartedAt ? '继续记录' : '开始快记'}
+                </button>
+                <button type="button" className="secondary-button" onClick={loadDemo}>
+                  <Sparkles size={18} />
+                  看示例
+                </button>
+              </div>
             </div>
-            <div className="quick-steps">
-              <StepItem index="1" title="明早补记" text="上床、起床、清醒时长，估不准也先记录。" />
-              <StepItem index="2" title="守住起床" text={`尽量接近 ${state.settings.fixedWakeTime} 起床，先稳定锚点。`} />
-              <StepItem index="3" title="第 8 天调整" text="满 7 条后再看效率和睡眠窗口建议。" />
-            </div>
-            <div className="button-row">
-              <button type="button" className="primary-button" disabled={!state.onboarding.safetyChecked} onClick={beginChallenge}>
-                <Check size={18} />
-                {state.onboarding.challengeStartedAt ? '继续记录' : '开始并记录今天'}
-              </button>
-              <button type="button" className="secondary-button" onClick={loadDemo}>
-                <Sparkles size={18} />
-                先看示例
-              </button>
-              <button type="button" className="ghost-button" onClick={() => setActiveTab('plan')}>
-                <ShieldCheck size={18} />
-                查看边界
-              </button>
+
+            <div className="calm-path" aria-label="开始路径">
+              <StepItem index="1" title="明早补记" text="只估上床、起床和清醒时长。" />
+              <StepItem index="2" title="先不改变" text={`尽量接近 ${state.settings.fixedWakeTime} 起床即可。`} />
+              <StepItem index="3" title="第 8 天再看计划" text="到时再决定上床窗口。" />
             </div>
           </section>
 
-          <aside className="panel">
-            <PanelTitle icon={<AlertTriangle />} title="先确认适不适合" detail="有下面情况先找专业人员" />
-            <div className="safety-list">
-              <Toggle label="我没有严重日间嗜睡或驾驶风险" checked={state.onboarding.safetyChecked} onChange={(value) => updateOnboarding('safetyChecked', value)} />
-              {!state.onboarding.safetyChecked && <p className="inline-warning">先确认这一项，才能开始睡眠窗口训练。</p>}
+          <aside className="panel calm-aside">
+            <details className="soft-details">
+              <summary>
+                <AlertTriangle size={18} />
+                哪些情况先别用窗口训练
+              </summary>
               <ul className="check-list">
-                <li>疑似睡眠呼吸暂停：打鼾明显、憋醒、白天控制不住犯困。</li>
+                <li>明显打鼾、憋醒，或白天控制不住犯困。</li>
                 <li>双相情感障碍、癫痫、严重抑郁、孕期或高危工作。</li>
                 <li>正在服用影响睡眠或警觉性的药物，需要先问医生。</li>
               </ul>
-            </div>
-            <div className="reminder-box">
-              <Field label="每天补记提醒">
-                <input type="time" value={state.onboarding.reminderTime} onChange={(event) => updateOnboarding('reminderTime', event.target.value)} />
-              </Field>
-              <button type="button" className="secondary-button" onClick={downloadReminder}>
+            </details>
+            <details className="soft-details">
+              <summary>
                 <Bell size={18} />
-                生成日历提醒
-              </button>
-            </div>
+                想被提醒再设置
+              </summary>
+              <div className="reminder-box">
+                <Field label="每天补记提醒">
+                  <input type="time" value={state.onboarding.reminderTime} onChange={(event) => updateOnboarding('reminderTime', event.target.value)} />
+                </Field>
+                <button type="button" className="secondary-button" onClick={downloadReminder}>
+                  <Bell size={18} />
+                  生成日历提醒
+                </button>
+              </div>
+            </details>
+            <p className="privacy-note">没有账号，没有服务器数据库。记录只保存在当前浏览器。</p>
           </aside>
         </section>
       )}
