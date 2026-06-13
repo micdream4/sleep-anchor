@@ -290,12 +290,10 @@ function App() {
                 <p>接下来 7 天每天补一条；第 8 天再看睡眠窗口。时间不精确也可以先估。</p>
               </div>
               <div className="next-action-controls">
-                <Toggle label="我今天没有严重日间嗜睡或驾驶风险" checked={state.onboarding.safetyChecked} onChange={(value) => updateOnboarding('safetyChecked', value)} />
-                <button type="button" className="primary-button" disabled={!state.onboarding.safetyChecked} onClick={beginChallenge}>
+                <button type="button" className="primary-button" onClick={beginChallenge}>
                   <ArrowRight size={18} />
                   {state.onboarding.challengeStartedAt ? '继续记录' : '开始记录'}
                 </button>
-                {!state.onboarding.safetyChecked && <p>先勾选安全确认，按钮就会打开。</p>}
               </div>
             </div>
 
@@ -332,6 +330,7 @@ function App() {
               </summary>
               <ul className="check-list">
                 <li>明显打鼾、憋醒，或白天控制不住犯困。</li>
+                <li>今天已经困到影响驾驶或操作设备，先不要做窗口训练。</li>
                 <li>双相情感障碍、癫痫、严重抑郁、孕期或高危工作。</li>
                 <li>正在服用影响睡眠或警觉性的药物，需要先问医生。</li>
               </ul>
