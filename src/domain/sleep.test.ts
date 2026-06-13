@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SETTINGS,
   buildChallengeProgress,
+  buildCadenceDays,
   buildReminderIcs,
+  buildWeeklyFocus,
   buildWeeklyPlan,
   buildWeeklyReport,
   calculateEntryMetrics,
@@ -71,10 +73,35 @@ describe('sleep domain', () => {
     expect(progress.percent).toBe(43)
   })
 
+  it('marks recent diary cadence against calendar days', () => {
+    const entries = [
+      createEntry('2026-06-11'),
+      createEntry('2026-06-13'),
+    ]
+    const cadence = buildCadenceDays(entries, '2026-06-13', 3)
+    expect(cadence).toEqual([
+      { date: '2026-06-11', label: '6/11', recorded: true },
+      { date: '2026-06-12', label: '昨天', recorded: false },
+      { date: '2026-06-13', label: '今天', recorded: true },
+    ])
+  })
+
+  it('returns one weekly focus for the current stage', () => {
+    const baselineFocus = buildWeeklyFocus(demoEntries().slice(0, 2), DEFAULT_SETTINGS)
+    expect(baselineFocus.priority).toBe('record')
+    expect(baselineFocus.title).toContain('再记录')
+
+    const readyFocus = buildWeeklyFocus(demoEntries().slice(0, 7), DEFAULT_SETTINGS)
+    expect(readyFocus.title.length).toBeGreaterThan(0)
+    expect(readyFocus.detail.length).toBeGreaterThan(0)
+  })
+
   it('builds a plain-text weekly report', () => {
     const report = buildWeeklyReport(demoEntries().slice(0, 7), DEFAULT_SETTINGS)
     expect(report.title).toContain('Sleep Anchor 周报告')
     expect(report.plainText).toContain('建议下周窗口')
+    expect(report.plainText).toContain('本周重点')
+    expect(report.focus.title.length).toBeGreaterThan(0)
     expect(report.strengths.length).toBeGreaterThan(0)
     expect(report.risks.length).toBeGreaterThan(0)
   })

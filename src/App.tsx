@@ -21,9 +21,11 @@ import {
 import {
   DEFAULT_ONBOARDING,
   DEFAULT_SETTINGS,
+  buildCadenceDays,
   buildChallengeProgress,
   buildHabitFlags,
   buildReminderIcs,
+  buildWeeklyFocus,
   buildWeeklyPlan,
   buildWeeklyReport,
   calculateEntryMetrics,
@@ -42,6 +44,7 @@ import { importState, loadState, resetState, saveState, serializeState, type App
 import './index.css'
 
 type Tab = 'start' | 'today' | 'trend' | 'plan' | 'data'
+type EntryMode = 'quick' | 'full'
 
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'start', label: '开始' },
@@ -52,12 +55,14 @@ const tabs: Array<{ id: Tab; label: string }> = [
 ]
 
 function App() {
+  const today = todayISO()
   const [state, setState] = useState<AppState>(() => loadState())
   const [activeTab, setActiveTab] = useState<Tab>(() => (loadState().entries.length ? 'today' : 'start'))
   const [draft, setDraft] = useState<DiaryEntry>(() => {
     const loaded = loadState()
-    return loaded.entries.find((entry) => entry.date === todayISO()) ?? createEntry(todayISO(), loaded.entries.at(-1))
+    return loaded.entries.find((entry) => entry.date === today) ?? createEntry(today, loaded.entries.at(-1))
   })
+  const [entryMode, setEntryMode] = useState<EntryMode>('quick')
   const [notice, setNotice] = useState('数据只保存在本机浏览器。')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -66,8 +71,15 @@ function App() {
   const plan = useMemo(() => buildWeeklyPlan(sorted, state.settings), [sorted, state.settings])
   const progress = useMemo(() => buildChallengeProgress(sorted), [sorted])
   const weeklyReport = useMemo(() => buildWeeklyReport(sorted, state.settings), [sorted, state.settings])
+  const weeklyFocus = useMemo(() => buildWeeklyFocus(sorted, state.settings), [sorted, state.settings])
   const habitFlags = useMemo(() => buildHabitFlags(sorted), [sorted])
+  const cadence = useMemo(() => buildCadenceDays(sorted, today), [sorted, today])
+  const missingCadence = useMemo(() => cadence.filter((day) => !day.recorded), [cadence])
+  const cadenceRecordedDays = cadence.length - missingCadence.length
   const draftMetrics = useMemo(() => calculateEntryMetrics(draft), [draft])
+  const savedDraftEntry = useMemo(() => sorted.find((entry) => entry.date === draft.date), [sorted, draft.date])
+  const draftIsSaved = savedDraftEntry ? entriesMatch(savedDraftEntry, draft) : false
+  const todayRecorded = cadence.at(-1)?.recorded ?? false
   const latestMetrics = useMemo(() => recent.map((entry) => ({ entry, metrics: calculateEntryMetrics(entry) })), [recent])
   const isBaselinePhase = plan.status !== 'ready'
   const windowTile = isBaselinePhase
@@ -115,11 +127,25 @@ function App() {
   }
 
   function saveDraft() {
+    const nextEntries = sortEntries([...state.entries.filter((entry) => entry.date !== draft.date), draft])
+    const nextProgress = buildChallengeProgress(nextEntries)
     setState((current) => {
       const withoutSameDate = current.entries.filter((entry) => entry.date !== draft.date)
       return { ...current, entries: sortEntries([...withoutSameDate, draft]) }
     })
-    setNotice(`${draft.date} 已保存。`)
+    setNotice(
+      nextProgress.recordedDays >= 7
+        ? `${draft.date} 已保存。7 天基线已完成，可以去计划页看下周窗口。`
+        : `${draft.date} 已保存。还差 ${nextProgress.remainingDays} 天生成第一个计划。`,
+    )
+  }
+
+  function openEntry(date: string) {
+    const existing = sorted.find((entry) => entry.date === date)
+    const previous = [...sorted].reverse().find((entry) => entry.date < date) ?? sorted.at(-1)
+    setDraft(existing ?? createEntry(date, previous))
+    setActiveTab('today')
+    setNotice(existing ? `正在编辑 ${date}。` : `正在补记 ${date}。`)
   }
 
   function deleteEntry(id: string) {
@@ -128,9 +154,7 @@ function App() {
   }
 
   function editEntry(entry: DiaryEntry) {
-    setDraft(entry)
-    setActiveTab('today')
-    setNotice(`正在编辑 ${entry.date}。`)
+    openEntry(entry.date)
   }
 
   function applySuggestedWindow() {
@@ -256,7 +280,7 @@ function App() {
             <div className="button-row">
               <button type="button" className="primary-button" disabled={!state.onboarding.safetyChecked} onClick={beginChallenge}>
                 <Check size={18} />
-                开始并记录今天
+                {state.onboarding.challengeStartedAt ? '继续记录' : '开始并记录今天'}
               </button>
               <button type="button" className="secondary-button" onClick={loadDemo}>
                 <Sparkles size={18} />
@@ -297,6 +321,21 @@ function App() {
         <section className="workspace two-col">
           <section className="panel primary-panel">
             <PanelTitle icon={<Save />} title="今日睡眠日记" detail="1 分钟完成，明早补充也可以" />
+            <div className="entry-toolbar">
+              <div>
+                <span className="eyebrow">当前记录</span>
+                <strong>{draftIsSaved ? `${draft.date} 已保存` : `${draft.date} 待保存`}</strong>
+                <p>{draftIsSaved ? '可以继续补充细节，或查看下一步。' : '先填核心时间，保存后再补充习惯也可以。'}</p>
+              </div>
+              <div className="segmented-control" aria-label="记录模式">
+                <button type="button" className={entryMode === 'quick' ? 'active' : ''} onClick={() => setEntryMode('quick')}>
+                  快记
+                </button>
+                <button type="button" className={entryMode === 'full' ? 'active' : ''} onClick={() => setEntryMode('full')}>
+                  完整
+                </button>
+              </div>
+            </div>
             <div className="form-grid">
               <Field label="日期">
                 <input type="date" value={draft.date} onChange={(event) => updateDraft('date', event.target.value)} />
@@ -316,41 +355,64 @@ function App() {
               <Field label="早醒未再睡">
                 <NumberInput value={draft.earlyWakeMin} onChange={(value) => updateDraft('earlyWakeMin', value)} suffix="分钟" />
               </Field>
-              <Field label="离床清醒">
-                <NumberInput value={draft.outOfBedAwakeMin} onChange={(value) => updateDraft('outOfBedAwakeMin', value)} suffix="分钟" />
-              </Field>
-              <Field label="白天小睡">
-                <NumberInput value={draft.napMin} onChange={(value) => updateDraft('napMin', value)} suffix="分钟" />
-              </Field>
+              {entryMode === 'full' && (
+                <>
+                  <Field label="离床清醒">
+                    <NumberInput value={draft.outOfBedAwakeMin} onChange={(value) => updateDraft('outOfBedAwakeMin', value)} suffix="分钟" />
+                  </Field>
+                  <Field label="白天小睡">
+                    <NumberInput value={draft.napMin} onChange={(value) => updateDraft('napMin', value)} suffix="分钟" />
+                  </Field>
+                </>
+              )}
             </div>
 
-            <div className="choice-grid">
-              <Toggle label="下午咖啡因" checked={draft.caffeineAfter2pm} onChange={(value) => updateDraft('caffeineAfter2pm', value)} />
-              <Toggle label="饮酒助眠" checked={draft.alcoholTonight} onChange={(value) => updateDraft('alcoholTonight', value)} />
-              <Toggle label="睡前看屏幕" checked={draft.screenWithin1h} onChange={(value) => updateDraft('screenWithin1h', value)} />
-              <Toggle label="白天运动" checked={draft.exerciseDay} onChange={(value) => updateDraft('exerciseDay', value)} />
-              <Toggle label="晨间见光" checked={draft.morningLight} onChange={(value) => updateDraft('morningLight', value)} />
-              <Toggle label="放松练习" checked={draft.relaxation} onChange={(value) => updateDraft('relaxation', value)} />
-            </div>
+            {entryMode === 'full' ? (
+              <>
+                <div className="choice-grid">
+                  <Toggle label="下午咖啡因" checked={draft.caffeineAfter2pm} onChange={(value) => updateDraft('caffeineAfter2pm', value)} />
+                  <Toggle label="饮酒助眠" checked={draft.alcoholTonight} onChange={(value) => updateDraft('alcoholTonight', value)} />
+                  <Toggle label="睡前看屏幕" checked={draft.screenWithin1h} onChange={(value) => updateDraft('screenWithin1h', value)} />
+                  <Toggle label="白天运动" checked={draft.exerciseDay} onChange={(value) => updateDraft('exerciseDay', value)} />
+                  <Toggle label="晨间见光" checked={draft.morningLight} onChange={(value) => updateDraft('morningLight', value)} />
+                  <Toggle label="放松练习" checked={draft.relaxation} onChange={(value) => updateDraft('relaxation', value)} />
+                </div>
 
-            <div className="slider-grid">
-              <Field label={`主观睡眠质量 ${draft.quality}/5`}>
-                <input type="range" min="1" max="5" value={draft.quality} onChange={(event) => updateDraft('quality', Number(event.target.value))} />
-              </Field>
-              <Field label={`睡前压力 ${draft.stress}/5`}>
-                <input type="range" min="1" max="5" value={draft.stress} onChange={(event) => updateDraft('stress', Number(event.target.value))} />
-              </Field>
-            </div>
+                <div className="slider-grid">
+                  <Field label={`主观睡眠质量 ${draft.quality}/5`}>
+                    <input type="range" min="1" max="5" value={draft.quality} onChange={(event) => updateDraft('quality', Number(event.target.value))} />
+                  </Field>
+                  <Field label={`睡前压力 ${draft.stress}/5`}>
+                    <input type="range" min="1" max="5" value={draft.stress} onChange={(event) => updateDraft('stress', Number(event.target.value))} />
+                  </Field>
+                </div>
 
-            <Field label="备注">
-              <textarea value={draft.notes} rows={3} onChange={(event) => updateDraft('notes', event.target.value)} placeholder="例如：半夜醒后没有看时间；早上有阳光。" />
-            </Field>
+                <Field label="备注">
+                  <textarea value={draft.notes} rows={3} onChange={(event) => updateDraft('notes', event.target.value)} placeholder="例如：半夜醒后没有看时间；早上有阳光。" />
+                </Field>
+              </>
+            ) : (
+              <div className="quick-save-note">
+                <strong>快记已经足够生成基线</strong>
+                <p>有精力时再切到完整模式补充小睡、咖啡因、屏幕和备注。</p>
+                <button type="button" className="ghost-button" onClick={() => setEntryMode('full')}>
+                  <ClipboardList size={18} />
+                  补完整字段
+                </button>
+              </div>
+            )}
 
             <div className="button-row">
               <button type="button" className="primary-button" onClick={saveDraft}>
                 <Save size={18} />
-                保存记录
+                {draftIsSaved ? '更新记录' : '保存这晚'}
               </button>
+              {progress.recordedDays >= 7 && (
+                <button type="button" className="secondary-button" onClick={() => setActiveTab('plan')}>
+                  <Moon size={18} />
+                  查看计划
+                </button>
+              )}
               <button type="button" className="ghost-button" onClick={() => setDraft(createEntry(todayISO(), sorted.at(-1)))}>
                 <RotateCcw size={18} />
                 重置今天
@@ -360,6 +422,45 @@ function App() {
 
           <aside className="panel">
             <PanelTitle icon={<Activity />} title="即时计算" detail="保存前即可检查" />
+            <div className={todayRecorded ? 'status-card complete' : 'status-card'}>
+              <span className="eyebrow">今天状态</span>
+              <strong>{todayRecorded ? '今天已记录' : '今天还没记录'}</strong>
+              <p>{todayRecorded ? '继续保持，明早再补下一条。' : '先保存一条快记，连续性比完美更重要。'}</p>
+              {!todayRecorded && (
+                <button type="button" className="secondary-button" onClick={() => openEntry(today)}>
+                  <CalendarDays size={18} />
+                  记录今天
+                </button>
+              )}
+            </div>
+            <div className="cadence-card">
+              <div className="mini-heading">
+                <strong>最近 7 天</strong>
+                <span>{cadenceRecordedDays}/7</span>
+              </div>
+              <div className="cadence-strip" aria-label="最近 7 天记录完成度">
+                {cadence.map((day) => (
+                  <button
+                    key={day.date}
+                    type="button"
+                    className={day.recorded ? 'cadence-dot done' : 'cadence-dot'}
+                    aria-label={`${day.label} ${day.recorded ? '已记录' : '未记录'}`}
+                    onClick={() => openEntry(day.date)}
+                  >
+                    <span>{day.recorded ? '✓' : ''}</span>
+                    <small>{day.label}</small>
+                  </button>
+                ))}
+              </div>
+              {missingCadence.length ? (
+                <button type="button" className="ghost-button full-width" onClick={() => openEntry(missingCadence.at(-1)?.date ?? today)}>
+                  <CalendarDays size={18} />
+                  补最近缺口
+                </button>
+              ) : (
+                <p className="compact-copy">近 7 天没有缺口，可以等明早再记。</p>
+              )}
+            </div>
             <div className="metric-stack">
               <InlineMetric label="床上时长" value={formatDuration(draftMetrics.timeInBedMin)} />
               <InlineMetric label="总睡眠" value={formatDuration(draftMetrics.totalSleepMin)} />
@@ -381,6 +482,11 @@ function App() {
                   ? `按平常作息睡，尽量接近 ${state.settings.fixedWakeTime} 起床。满 7 条记录后再调整上床窗口。`
                   : `${plan.activeBedtime} 上床，${state.settings.fixedWakeTime} 起床。没睡着时优先离床放松，不在床上硬耗。`}
               </span>
+            </div>
+            <div className="focus-card compact">
+              <span className="eyebrow">本周重点</span>
+              <strong>{weeklyFocus.title}</strong>
+              <p>{weeklyFocus.detail}</p>
             </div>
             <ul className="flag-list">
               {habitFlags.map((flag) => (
@@ -441,19 +547,40 @@ function App() {
           <section className="panel primary-panel">
             <PanelTitle icon={<Moon />} title="睡眠窗口计划" detail="每 7 条记录调整一次，不逐日追涨杀跌" />
             <div className="plan-hero">
-              <div>
-                <span className="eyebrow">建议下周窗口</span>
-                <strong>{formatDuration(plan.suggestedWindowMin)}</strong>
-                <p>
-                  {plan.suggestedBedtime} - {state.settings.fixedWakeTime}
-                </p>
-              </div>
-              <button type="button" className="primary-button" disabled={plan.status !== 'ready'} onClick={applySuggestedWindow}>
-                <Check size={18} />
-                采用建议
-              </button>
+              {plan.status === 'ready' ? (
+                <>
+                  <div>
+                    <span className="eyebrow">建议下周窗口</span>
+                    <strong>{formatDuration(plan.suggestedWindowMin)}</strong>
+                    <p>
+                      {plan.suggestedBedtime} - {state.settings.fixedWakeTime}
+                    </p>
+                  </div>
+                  <button type="button" className="primary-button" onClick={applySuggestedWindow}>
+                    <Check size={18} />
+                    采用建议
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <span className="eyebrow">基线期</span>
+                    <strong>{progress.recordedDays ? `还差 ${progress.remainingDays} 天` : '先记录 7 天'}</strong>
+                    <p>满 7 条真实记录后，才会生成第一个睡眠窗口。</p>
+                  </div>
+                  <button type="button" className="primary-button" onClick={() => setActiveTab('today')}>
+                    <Save size={18} />
+                    继续记录
+                  </button>
+                </>
+              )}
             </div>
             <p className="summary-text">{plan.summary}</p>
+            <div className="focus-card">
+              <span className="eyebrow">本周重点</span>
+              <strong>{weeklyFocus.title}</strong>
+              <p>{weeklyFocus.detail}</p>
+            </div>
             <div className="report-card">
               <div>
                 <span className="eyebrow">可复制周报告</span>
@@ -667,6 +794,12 @@ function EmptyState({ onDemo }: { onDemo: () => void }) {
       </button>
     </div>
   )
+}
+
+function entriesMatch(a: DiaryEntry, b: DiaryEntry): boolean {
+  const comparableA = { ...a, id: '' }
+  const comparableB = { ...b, id: '' }
+  return JSON.stringify(comparableA) === JSON.stringify(comparableB)
 }
 
 export default App

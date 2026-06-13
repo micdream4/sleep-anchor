@@ -68,8 +68,21 @@ export type WeeklyReport = {
   avgSleepMin: number
   avgEfficiency: number
   suggestedWindowMin: number
+  focus: WeeklyFocus
   risks: string[]
   strengths: string[]
+}
+
+export type WeeklyFocus = {
+  priority: 'record' | 'anchor' | 'window' | 'habit' | 'maintain'
+  title: string
+  detail: string
+}
+
+export type CadenceDay = {
+  date: string
+  label: string
+  recorded: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -120,6 +133,12 @@ export function todayISO(date = new Date()): string {
   const offset = date.getTimezoneOffset()
   const local = new Date(date.getTime() - offset * 60_000)
   return local.toISOString().slice(0, 10)
+}
+
+export function addDaysISO(date: string, amount: number): string {
+  const next = new Date(`${date}T00:00:00`)
+  next.setDate(next.getDate() + amount)
+  return todayISO(next)
 }
 
 export function toMinutes(value: string): number {
@@ -293,6 +312,110 @@ export function buildHabitFlags(entries: DiaryEntry[]): string[] {
   return flags.slice(0, 4)
 }
 
+export function buildCadenceDays(entries: DiaryEntry[], anchorDate = todayISO(), days = 7): CadenceDay[] {
+  const recordedDates = new Set(entries.map((entry) => entry.date))
+
+  return Array.from({ length: days }, (_, index) => {
+    const date = addDaysISO(anchorDate, index - days + 1)
+    const [, month, day] = date.split('-')
+    const label = date === anchorDate ? '今天' : date === addDaysISO(anchorDate, -1) ? '昨天' : `${Number(month)}/${Number(day)}`
+    return {
+      date,
+      label,
+      recorded: recordedDates.has(date),
+    }
+  })
+}
+
+export function buildWeeklyFocus(entries: DiaryEntry[], settings: Settings): WeeklyFocus {
+  const recent = recentEntries(entries, 7)
+  const plan = buildWeeklyPlan(entries, settings)
+
+  if (plan.status === 'empty') {
+    return {
+      priority: 'record',
+      title: '先记录第一晚',
+      detail: '不需要先调整作息。明早补上上床、起床和清醒时长，先拿到真实基线。',
+    }
+  }
+
+  if (plan.status === 'baseline') {
+    return {
+      priority: 'record',
+      title: `再记录 ${7 - recent.length} 天`,
+      detail: `第一周先守住 ${settings.fixedWakeTime} 起床，满 7 条后再给出睡眠窗口。`,
+    }
+  }
+
+  const avgLatency = average(recent.map((entry) => safeNumber(entry.sleepLatencyMin)))
+  const avgNap = average(recent.map((entry) => safeNumber(entry.napMin)))
+  const screenDays = recent.filter((entry) => entry.screenWithin1h).length
+  const caffeineDays = recent.filter((entry) => entry.caffeineAfter2pm).length
+  const relaxDays = recent.filter((entry) => entry.relaxation).length
+
+  if (plan.anchorHitDays < 5) {
+    return {
+      priority: 'anchor',
+      title: '先守住固定起床',
+      detail: `近 7 天只有 ${plan.anchorHitDays}/7 天接近 ${settings.fixedWakeTime}。本周先不追求早睡，优先稳定起床锚点。`,
+    }
+  }
+
+  if (plan.action === 'shorten') {
+    return {
+      priority: 'window',
+      title: '不要提前上床',
+      detail: `睡眠效率 ${formatPercent(plan.avgEfficiency)} 偏低。本周按 ${plan.suggestedBedtime} - ${settings.fixedWakeTime} 执行，醒着太久就离床放松。`,
+    }
+  }
+
+  if (plan.action === 'expand') {
+    return {
+      priority: 'window',
+      title: '放宽 15 分钟',
+      detail: `睡眠效率 ${formatPercent(plan.avgEfficiency)} 已稳定。本周可以把窗口放到 ${formatDuration(plan.suggestedWindowMin)}，继续观察。`,
+    }
+  }
+
+  if (screenDays >= 4) {
+    return {
+      priority: 'habit',
+      title: '替换睡前屏幕',
+      detail: `近 7 天有 ${screenDays} 天睡前看屏幕。先固定一个 10 分钟低刺激流程，比强迫自己入睡更重要。`,
+    }
+  }
+
+  if (caffeineDays >= 2) {
+    return {
+      priority: 'habit',
+      title: '前移咖啡因截止线',
+      detail: `近 7 天有 ${caffeineDays} 天下午摄入咖啡因。本周先把最后一杯前移到午后早些时候。`,
+    }
+  }
+
+  if (avgNap > 30) {
+    return {
+      priority: 'habit',
+      title: '压短白天小睡',
+      detail: `白天小睡均值约 ${Math.round(avgNap)} 分钟。本周先控制到 20-30 分钟，避免冲淡夜间睡意。`,
+    }
+  }
+
+  if (avgLatency >= 35 && relaxDays < 3) {
+    return {
+      priority: 'habit',
+      title: '加一个离床放松动作',
+      detail: `平均入睡耗时约 ${Math.round(avgLatency)} 分钟。睡不着时先离床做 5 分钟放松，避免在床上硬耗。`,
+    }
+  }
+
+  return {
+    priority: 'maintain',
+    title: '维持本周窗口',
+    detail: `继续按 ${subtractMinutes(settings.fixedWakeTime, settings.activeWindowMin)} - ${settings.fixedWakeTime} 执行，等下一组 7 条记录再调整。`,
+  }
+}
+
 export function buildChallengeProgress(entries: DiaryEntry[]): ChallengeProgress {
   const recordedDays = Math.min(7, recentEntries(entries, 7).length)
   const remainingDays = Math.max(0, 7 - recordedDays)
@@ -330,6 +453,7 @@ export function buildChallengeProgress(entries: DiaryEntry[]): ChallengeProgress
 export function buildWeeklyReport(entries: DiaryEntry[], settings: Settings): WeeklyReport {
   const recent = recentEntries(entries, 7)
   const plan = buildWeeklyPlan(entries, settings)
+  const focus = buildWeeklyFocus(entries, settings)
   const metrics = recent.map(calculateEntryMetrics)
   const avgLatency = average(recent.map((entry) => safeNumber(entry.sleepLatencyMin)))
   const avgNap = average(recent.map((entry) => safeNumber(entry.napMin)))
@@ -372,6 +496,7 @@ export function buildWeeklyReport(entries: DiaryEntry[], settings: Settings): We
     `平均睡眠效率：${formatPercent(plan.avgEfficiency)}`,
     `固定起床命中：${plan.anchorHitDays}/7 天`,
     `建议下周窗口：${formatDuration(plan.suggestedWindowMin)}（${plan.suggestedBedtime} - ${settings.fixedWakeTime}）`,
+    `本周重点：${focus.title}。${focus.detail}`,
     '',
     '做得好的地方：',
     ...strengths.map((item) => `- ${item}`),
@@ -389,6 +514,7 @@ export function buildWeeklyReport(entries: DiaryEntry[], settings: Settings): We
     avgSleepMin: plan.avgSleepMin,
     avgEfficiency: plan.avgEfficiency,
     suggestedWindowMin: plan.suggestedWindowMin,
+    focus,
     risks,
     strengths,
   }
