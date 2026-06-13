@@ -1,0 +1,16 @@
+{
+  "name": "Sleep Anchor",
+  "short_name": "Sleep Anchor",
+  "description": "CBT-I sleep diary and sleep window planner.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#14675d",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
