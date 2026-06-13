@@ -1,8 +1,12 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
+  AlertTriangle,
+  Bell,
   CalendarDays,
   Check,
+  ClipboardList,
+  Copy,
   Download,
   FileJson,
   Moon,
@@ -15,9 +19,13 @@ import {
   Upload,
 } from 'lucide-react'
 import {
+  DEFAULT_ONBOARDING,
   DEFAULT_SETTINGS,
+  buildChallengeProgress,
   buildHabitFlags,
+  buildReminderIcs,
   buildWeeklyPlan,
+  buildWeeklyReport,
   calculateEntryMetrics,
   createEntry,
   demoEntries,
@@ -33,9 +41,10 @@ import {
 import { importState, loadState, resetState, saveState, serializeState, type AppState } from './lib/storage'
 import './index.css'
 
-type Tab = 'today' | 'trend' | 'plan' | 'data'
+type Tab = 'start' | 'today' | 'trend' | 'plan' | 'data'
 
 const tabs: Array<{ id: Tab; label: string }> = [
+  { id: 'start', label: '开始' },
   { id: 'today', label: '记录' },
   { id: 'trend', label: '趋势' },
   { id: 'plan', label: '计划' },
@@ -44,7 +53,7 @@ const tabs: Array<{ id: Tab; label: string }> = [
 
 function App() {
   const [state, setState] = useState<AppState>(() => loadState())
-  const [activeTab, setActiveTab] = useState<Tab>('today')
+  const [activeTab, setActiveTab] = useState<Tab>(() => (loadState().entries.length ? 'today' : 'start'))
   const [draft, setDraft] = useState<DiaryEntry>(() => {
     const loaded = loadState()
     return loaded.entries.find((entry) => entry.date === todayISO()) ?? createEntry(todayISO(), loaded.entries.at(-1))
@@ -55,9 +64,15 @@ function App() {
   const sorted = useMemo(() => sortEntries(state.entries), [state.entries])
   const recent = useMemo(() => recentEntries(sorted, 14), [sorted])
   const plan = useMemo(() => buildWeeklyPlan(sorted, state.settings), [sorted, state.settings])
+  const progress = useMemo(() => buildChallengeProgress(sorted), [sorted])
+  const weeklyReport = useMemo(() => buildWeeklyReport(sorted, state.settings), [sorted, state.settings])
   const habitFlags = useMemo(() => buildHabitFlags(sorted), [sorted])
   const draftMetrics = useMemo(() => calculateEntryMetrics(draft), [draft])
   const latestMetrics = useMemo(() => recent.map((entry) => ({ entry, metrics: calculateEntryMetrics(entry) })), [recent])
+  const isBaselinePhase = plan.status !== 'ready'
+  const windowTile = isBaselinePhase
+    ? { label: '基线进度', value: `${progress.recordedDays}/7 天`, detail: '先记录，不调整' }
+    : { label: '本周窗口', value: formatDuration(state.settings.activeWindowMin), detail: `${plan.activeBedtime} - ${state.settings.fixedWakeTime}` }
 
   useEffect(() => {
     saveState(state)
@@ -78,6 +93,25 @@ function App() {
       ...current,
       settings: { ...current.settings, [key]: value },
     }))
+  }
+
+  function updateOnboarding<K extends keyof AppState['onboarding']>(key: K, value: AppState['onboarding'][K]) {
+    setState((current) => ({
+      ...current,
+      onboarding: { ...current.onboarding, [key]: value },
+    }))
+  }
+
+  function beginChallenge() {
+    setState((current) => ({
+      ...current,
+      onboarding: {
+        ...current.onboarding,
+        challengeStartedAt: current.onboarding.challengeStartedAt ?? todayISO(),
+      },
+    }))
+    setActiveTab('today')
+    setNotice('7 天挑战已开始。先按真实情况记录，不要急着调整作息。')
   }
 
   function saveDraft() {
@@ -131,16 +165,32 @@ function App() {
 
   function hardReset() {
     resetState()
-    setState({ settings: DEFAULT_SETTINGS, entries: [] })
+    setState({ settings: DEFAULT_SETTINGS, onboarding: DEFAULT_ONBOARDING, entries: [] })
     setDraft(createEntry())
+    setActiveTab('start')
     setNotice('本地数据已清空。')
   }
 
   function loadDemo() {
     const entries = demoEntries()
-    setState({ settings: DEFAULT_SETTINGS, entries })
+    setState({ settings: DEFAULT_SETTINGS, onboarding: { ...DEFAULT_ONBOARDING, challengeStartedAt: entries[0]?.date ?? todayISO(), safetyChecked: true }, entries })
     setDraft(entries.at(-1) ?? createEntry())
     setNotice('已载入 10 天示例数据，可随时清空。')
+  }
+
+  function copyWeeklyReport() {
+    navigator.clipboard
+      ?.writeText(weeklyReport.plainText)
+      .then(() => setNotice('周报告已复制，可以发给咨询师或自己留档。'))
+      .catch(() => {
+        download(`sleep-anchor-report-${todayISO()}.txt`, weeklyReport.plainText, 'text/plain;charset=utf-8')
+        setNotice('浏览器不允许复制，已改为下载周报告。')
+      })
+  }
+
+  function downloadReminder() {
+    download('sleep-anchor-7-day-reminder.ics', buildReminderIcs(state.onboarding.reminderTime), 'text/calendar;charset=utf-8')
+    setNotice('已生成 7 天补记提醒，可导入系统日历。')
   }
 
   return (
@@ -171,7 +221,7 @@ function App() {
 
       <section className="dashboard-band">
         <MetricTile icon={<Sun />} label="起床锚点" value={state.settings.fixedWakeTime} detail={`${plan.anchorHitDays}/7 天命中`} />
-        <MetricTile icon={<Moon />} label="本周窗口" value={formatDuration(state.settings.activeWindowMin)} detail={`${plan.activeBedtime} - ${state.settings.fixedWakeTime}`} />
+        <MetricTile icon={<Moon />} label={windowTile.label} value={windowTile.value} detail={windowTile.detail} />
         <MetricTile icon={<Activity />} label="近 7 天效率" value={plan.recordsUsed ? formatPercent(plan.avgEfficiency) : '--'} detail={plan.recordsUsed ? `${plan.recordsUsed} 条记录` : '等待记录'} />
         <MetricTile icon={<CalendarDays />} label="平均睡眠" value={plan.recordsUsed ? formatDuration(plan.avgSleepMin) : '--'} detail="TST，不含小睡" />
       </section>
@@ -180,6 +230,68 @@ function App() {
         <ShieldCheck size={18} />
         <span>{notice}</span>
       </section>
+
+      {activeTab === 'start' && (
+        <section className="workspace two-col">
+          <section className="panel primary-panel">
+            <PanelTitle icon={<ClipboardList />} title="7 天睡眠基线挑战" detail="第一周只记录，不急着改变作息" />
+            <div className="start-hero">
+              <div>
+                <span className="eyebrow">当前进度</span>
+                <strong>{progress.statusText}</strong>
+                <p>{progress.nextAction}</p>
+              </div>
+              <div className="progress-ring" aria-label={`7 天挑战进度 ${progress.percent}%`}>
+                <span>{progress.recordedDays}/7</span>
+              </div>
+            </div>
+            <div className="progress-track" aria-hidden="true">
+              <span style={{ width: `${progress.percent}%` }} />
+            </div>
+            <div className="quick-steps">
+              <StepItem index="1" title="明早补记" text="上床、起床、清醒时长，估不准也先记录。" />
+              <StepItem index="2" title="守住起床" text={`尽量接近 ${state.settings.fixedWakeTime} 起床，先稳定锚点。`} />
+              <StepItem index="3" title="第 8 天调整" text="满 7 条后再看效率和睡眠窗口建议。" />
+            </div>
+            <div className="button-row">
+              <button type="button" className="primary-button" disabled={!state.onboarding.safetyChecked} onClick={beginChallenge}>
+                <Check size={18} />
+                开始并记录今天
+              </button>
+              <button type="button" className="secondary-button" onClick={loadDemo}>
+                <Sparkles size={18} />
+                先看示例
+              </button>
+              <button type="button" className="ghost-button" onClick={() => setActiveTab('plan')}>
+                <ShieldCheck size={18} />
+                查看边界
+              </button>
+            </div>
+          </section>
+
+          <aside className="panel">
+            <PanelTitle icon={<AlertTriangle />} title="先确认适不适合" detail="有下面情况先找专业人员" />
+            <div className="safety-list">
+              <Toggle label="我没有严重日间嗜睡或驾驶风险" checked={state.onboarding.safetyChecked} onChange={(value) => updateOnboarding('safetyChecked', value)} />
+              {!state.onboarding.safetyChecked && <p className="inline-warning">先确认这一项，才能开始睡眠窗口训练。</p>}
+              <ul className="check-list">
+                <li>疑似睡眠呼吸暂停：打鼾明显、憋醒、白天控制不住犯困。</li>
+                <li>双相情感障碍、癫痫、严重抑郁、孕期或高危工作。</li>
+                <li>正在服用影响睡眠或警觉性的药物，需要先问医生。</li>
+              </ul>
+            </div>
+            <div className="reminder-box">
+              <Field label="每天补记提醒">
+                <input type="time" value={state.onboarding.reminderTime} onChange={(event) => updateOnboarding('reminderTime', event.target.value)} />
+              </Field>
+              <button type="button" className="secondary-button" onClick={downloadReminder}>
+                <Bell size={18} />
+                生成日历提醒
+              </button>
+            </div>
+          </aside>
+        </section>
+      )}
 
       {activeTab === 'today' && (
         <section className="workspace two-col">
@@ -263,9 +375,11 @@ function App() {
               </div>
             </div>
             <div className="callout">
-              <strong>今晚执行</strong>
+              <strong>{isBaselinePhase ? '基线期动作' : '今晚执行'}</strong>
               <span>
-                {plan.activeBedtime} 上床，{state.settings.fixedWakeTime} 起床。没睡着时优先离床放松，不在床上硬耗。
+                {isBaselinePhase
+                  ? `按平常作息睡，尽量接近 ${state.settings.fixedWakeTime} 起床。满 7 条记录后再调整上床窗口。`
+                  : `${plan.activeBedtime} 上床，${state.settings.fixedWakeTime} 起床。没睡着时优先离床放松，不在床上硬耗。`}
               </span>
             </div>
             <ul className="flag-list">
@@ -340,6 +454,22 @@ function App() {
               </button>
             </div>
             <p className="summary-text">{plan.summary}</p>
+            <div className="report-card">
+              <div>
+                <span className="eyebrow">可复制周报告</span>
+                <h3>{weeklyReport.title}</h3>
+                <p>
+                  {progress.recordedDays < 7
+                    ? `还差 ${progress.remainingDays} 天。现在可以预览格式，满 7 天后内容更完整。`
+                    : '已生成可发给咨询师或自己复盘的文字报告。'}
+                </p>
+              </div>
+              <button type="button" className="secondary-button" onClick={copyWeeklyReport}>
+                <Copy size={18} />
+                复制周报告
+              </button>
+            </div>
+            <pre className="report-preview">{weeklyReport.plainText}</pre>
             <div className="settings-grid">
               <Field label="固定起床时间">
                 <input type="time" value={state.settings.fixedWakeTime} onChange={(event) => updateSettings('fixedWakeTime', event.target.value)} />
@@ -391,6 +521,10 @@ function App() {
               <button type="button" className="secondary-button" onClick={() => download(`sleep-anchor-${todayISO()}.csv`, exportCsv(sorted), 'text/csv;charset=utf-8')}>
                 <Download size={18} />
                 导出 CSV
+              </button>
+              <button type="button" className="secondary-button" onClick={() => download(`sleep-anchor-report-${todayISO()}.txt`, weeklyReport.plainText, 'text/plain;charset=utf-8')}>
+                <Download size={18} />
+                导出周报
               </button>
               <button type="button" className="secondary-button" onClick={() => fileInputRef.current?.click()}>
                 <Upload size={18} />
@@ -489,6 +623,18 @@ function InlineMetric({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  )
+}
+
+function StepItem({ index, title, text }: { index: string; title: string; text: string }) {
+  return (
+    <article className="step-item">
+      <span>{index}</span>
+      <div>
+        <strong>{title}</strong>
+        <p>{text}</p>
+      </div>
+    </article>
   )
 }
 

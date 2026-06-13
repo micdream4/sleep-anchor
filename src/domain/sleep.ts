@@ -34,6 +34,12 @@ export type Settings = {
   maxWindowMin: number
 }
 
+export type OnboardingState = {
+  challengeStartedAt: string | null
+  safetyChecked: boolean
+  reminderTime: string
+}
+
 export type WeeklyPlan = {
   status: 'empty' | 'baseline' | 'ready'
   recordsUsed: number
@@ -48,11 +54,35 @@ export type WeeklyPlan = {
   summary: string
 }
 
+export type ChallengeProgress = {
+  recordedDays: number
+  remainingDays: number
+  percent: number
+  statusText: string
+  nextAction: string
+}
+
+export type WeeklyReport = {
+  title: string
+  plainText: string
+  avgSleepMin: number
+  avgEfficiency: number
+  suggestedWindowMin: number
+  risks: string[]
+  strengths: string[]
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   fixedWakeTime: '07:00',
   activeWindowMin: 390,
   minWindowMin: 330,
   maxWindowMin: 540,
+}
+
+export const DEFAULT_ONBOARDING: OnboardingState = {
+  challengeStartedAt: null,
+  safetyChecked: false,
+  reminderTime: '08:00',
 }
 
 export const EMPTY_ENTRY: Omit<DiaryEntry, 'id' | 'date'> = {
@@ -261,6 +291,130 @@ export function buildHabitFlags(entries: DiaryEntry[]): string[] {
   if (relaxDays < 3) flags.push('放松练习偏少，可用 5 分钟呼吸或肌肉放松替代硬躺。')
 
   return flags.slice(0, 4)
+}
+
+export function buildChallengeProgress(entries: DiaryEntry[]): ChallengeProgress {
+  const recordedDays = Math.min(7, recentEntries(entries, 7).length)
+  const remainingDays = Math.max(0, 7 - recordedDays)
+  const percent = Math.round((recordedDays / 7) * 100)
+
+  if (recordedDays === 0) {
+    return {
+      recordedDays,
+      remainingDays,
+      percent,
+      statusText: '还没开始',
+      nextAction: '今晚按平常作息睡，明早补第一条记录。',
+    }
+  }
+
+  if (recordedDays < 7) {
+    return {
+      recordedDays,
+      remainingDays,
+      percent,
+      statusText: `已完成 ${recordedDays}/7 天`,
+      nextAction: `再记录 ${remainingDays} 天后，系统会给出第一个睡眠窗口。`,
+    }
+  }
+
+  return {
+    recordedDays,
+    remainingDays,
+    percent,
+    statusText: '7 天基线已完成',
+    nextAction: '现在可以查看周报告，并决定是否采用下周窗口。',
+  }
+}
+
+export function buildWeeklyReport(entries: DiaryEntry[], settings: Settings): WeeklyReport {
+  const recent = recentEntries(entries, 7)
+  const plan = buildWeeklyPlan(entries, settings)
+  const metrics = recent.map(calculateEntryMetrics)
+  const avgLatency = average(recent.map((entry) => safeNumber(entry.sleepLatencyMin)))
+  const avgNap = average(recent.map((entry) => safeNumber(entry.napMin)))
+  const screenDays = recent.filter((entry) => entry.screenWithin1h).length
+  const caffeineDays = recent.filter((entry) => entry.caffeineAfter2pm).length
+  const relaxDays = recent.filter((entry) => entry.relaxation).length
+  const exerciseDays = recent.filter((entry) => entry.exerciseDay).length
+  const lightDays = recent.filter((entry) => entry.morningLight).length
+
+  const strengths: string[] = []
+  const risks: string[] = []
+
+  if (plan.anchorHitDays >= 5) strengths.push(`固定起床执行较好：${plan.anchorHitDays}/7 天接近 ${settings.fixedWakeTime}`)
+  if (plan.avgEfficiency >= 0.85) strengths.push(`平均睡眠效率 ${formatPercent(plan.avgEfficiency)}，节律正在稳定`)
+  if (exerciseDays >= 4) strengths.push('白天活动执行稳定')
+  if (lightDays >= 4) strengths.push('晨间见光执行稳定')
+  if (!strengths.length) strengths.push('已完成连续记录，这是后续调整的基础')
+
+  if (plan.avgEfficiency < 0.85) risks.push(`平均睡眠效率 ${formatPercent(plan.avgEfficiency)}，先不要提前上床`)
+  if (avgLatency >= 35) risks.push(`平均入睡耗时约 ${Math.round(avgLatency)} 分钟，睡前唤醒偏高`)
+  if (screenDays >= 4) risks.push(`睡前屏幕 ${screenDays}/7 天，建议先替换成固定放松流程`)
+  if (caffeineDays >= 2) risks.push(`下午咖啡因 ${caffeineDays}/7 天，建议把截止时间前移`)
+  if (avgNap > 30) risks.push(`白天小睡均值约 ${Math.round(avgNap)} 分钟，建议控制在 20-30 分钟`)
+  if (relaxDays < 3) risks.push('放松练习偏少，醒后焦虑时可用离床放松替代硬躺')
+  if (!risks.length) risks.push('本周没有明显习惯风险，继续观察趋势')
+
+  const rows = recent
+    .map((entry, index) => {
+      const item = metrics[index]
+      return `${entry.date}  上床 ${entry.inBedTime}  起床 ${entry.outBedTime}  总睡眠 ${formatDuration(item.totalSleepMin)}  效率 ${formatPercent(item.sleepEfficiency)}`
+    })
+    .join('\n')
+
+  const title = `Sleep Anchor 周报告（${recent[0]?.date ?? '未开始'} - ${recent.at(-1)?.date ?? '未开始'}）`
+  const plainText = [
+    title,
+    '',
+    `记录天数：${recent.length}/7`,
+    `平均总睡眠：${formatDuration(plan.avgSleepMin)}`,
+    `平均睡眠效率：${formatPercent(plan.avgEfficiency)}`,
+    `固定起床命中：${plan.anchorHitDays}/7 天`,
+    `建议下周窗口：${formatDuration(plan.suggestedWindowMin)}（${plan.suggestedBedtime} - ${settings.fixedWakeTime}）`,
+    '',
+    '做得好的地方：',
+    ...strengths.map((item) => `- ${item}`),
+    '',
+    '需要关注：',
+    ...risks.map((item) => `- ${item}`),
+    '',
+    '逐日记录：',
+    rows || '暂无记录',
+  ].join('\n')
+
+  return {
+    title,
+    plainText,
+    avgSleepMin: plan.avgSleepMin,
+    avgEfficiency: plan.avgEfficiency,
+    suggestedWindowMin: plan.suggestedWindowMin,
+    risks,
+    strengths,
+  }
+}
+
+export function buildReminderIcs(reminderTime: string): string {
+  const today = new Date()
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+  const date = todayISO(tomorrow).replaceAll('-', '')
+  const time = reminderTime.replace(':', '').padEnd(4, '0')
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Sleep Anchor//CBTI Reminder//ZH',
+    'BEGIN:VEVENT',
+    `UID:sleep-anchor-${stamp}@sleep-anchor`,
+    `DTSTAMP:${stamp}`,
+    `DTSTART:${date}T${time}00`,
+    `RRULE:FREQ=DAILY;COUNT=7`,
+    'SUMMARY:补一条 Sleep Anchor 睡眠日记',
+    'DESCRIPTION:记录上床、起床、清醒时长和睡前习惯。连续 7 天后再调整睡眠窗口。',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n')
 }
 
 export function exportCsv(entries: DiaryEntry[]): string {

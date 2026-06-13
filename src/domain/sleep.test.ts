@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SETTINGS,
+  buildChallengeProgress,
+  buildReminderIcs,
   buildWeeklyPlan,
+  buildWeeklyReport,
   calculateEntryMetrics,
   createEntry,
   demoEntries,
@@ -59,5 +62,27 @@ describe('sleep domain', () => {
   it('formats durations compactly', () => {
     expect(formatDuration(390)).toBe('6h 30m')
     expect(formatDuration(25)).toBe('25m')
+  })
+
+  it('tracks seven-day challenge progress', () => {
+    const progress = buildChallengeProgress(demoEntries().slice(0, 3))
+    expect(progress.recordedDays).toBe(3)
+    expect(progress.remainingDays).toBe(4)
+    expect(progress.percent).toBe(43)
+  })
+
+  it('builds a plain-text weekly report', () => {
+    const report = buildWeeklyReport(demoEntries().slice(0, 7), DEFAULT_SETTINGS)
+    expect(report.title).toContain('Sleep Anchor 周报告')
+    expect(report.plainText).toContain('建议下周窗口')
+    expect(report.strengths.length).toBeGreaterThan(0)
+    expect(report.risks.length).toBeGreaterThan(0)
+  })
+
+  it('generates a seven-day calendar reminder', () => {
+    const ics = buildReminderIcs('08:30')
+    expect(ics).toContain('BEGIN:VCALENDAR')
+    expect(ics).toContain('RRULE:FREQ=DAILY;COUNT=7')
+    expect(ics).toContain('T083000')
   })
 })
