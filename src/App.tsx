@@ -267,9 +267,14 @@ function App() {
           <section className="onboarding-panel">
             <div className="calm-guide">
               <div className="guide-copy">
-                <span className="eyebrow">先别急着调整睡眠</span>
-                <h2>今晚照常睡，明早记一条就好。</h2>
-                <p>Sleep Anchor 会先帮你收集 7 天真实基线。满 7 条后，再给出睡眠窗口和本周重点。</p>
+                <span className="eyebrow">CBT-I 的第一步</span>
+                <h2>先记录 7 天，让计划按真实睡眠来。</h2>
+                <p>CBT-I 是针对失眠的非药物方法。这里先做最基础的一步：用睡眠日记看清睡眠效率、起床锚点和下周窗口。</p>
+                <div className="reason-pills" aria-label="为什么需要记录">
+                  <span>少猜：到底睡了多久</span>
+                  <span>少耗：减少床上清醒</span>
+                  <span>少乱调：每周只改一次</span>
+                </div>
               </div>
               <div className="guide-progress" aria-label={`7 天挑战进度 ${progress.percent}%`}>
                 <strong>{progress.recordedDays}/7</strong>
@@ -302,6 +307,20 @@ function App() {
           </section>
 
           <aside className="calm-aside">
+            <details className="soft-details cbti-details" open>
+              <summary>
+                <ClipboardList size={18} />
+                CBT-I 能帮什么
+              </summary>
+              <div className="details-copy">
+                <p>它常用于入睡困难、夜里醒后难再睡、早醒、越躺越焦虑这类失眠困扰。</p>
+                <ul className="check-list">
+                  <li>记录不是评分，是为了少靠感觉猜。</li>
+                  <li>先看 7 天基线，再决定是否调整上床时间。</li>
+                  <li>本工具只做自助记录与计划辅助，不替代医生或咨询师。</li>
+                </ul>
+              </div>
+            </details>
             <details className="soft-details">
               <summary>
                 <AlertTriangle size={18} />

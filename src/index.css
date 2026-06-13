@@ -737,10 +737,30 @@ th {
 
 .guide-copy p,
 .soft-check p,
-.privacy-note {
+.privacy-note,
+.details-copy p {
   margin: 0;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.reason-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.reason-pills span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(15, 108, 98, 0.1);
+  border-radius: 999px;
+  color: var(--teal-dark);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
 }
 
 .guide-progress {
@@ -848,6 +868,18 @@ th {
 .soft-details .check-list {
   margin: 10px 0 12px;
   padding-right: 12px;
+}
+
+.details-copy {
+  padding: 12px;
+}
+
+.details-copy .check-list {
+  margin-bottom: 0;
+}
+
+.cbti-details {
+  background: var(--surface);
 }
 
 .privacy-note {
