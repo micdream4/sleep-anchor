@@ -48,10 +48,10 @@ type EntryMode = 'quick' | 'full'
 
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'start', label: '开始' },
-  { id: 'today', label: '记录' },
-  { id: 'trend', label: '趋势' },
-  { id: 'plan', label: '计划' },
-  { id: 'data', label: '数据' },
+  { id: 'today', label: '今天' },
+  { id: 'trend', label: '回看' },
+  { id: 'plan', label: '下周' },
+  { id: 'data', label: '备份' },
 ]
 
 function App() {
@@ -227,21 +227,23 @@ function App() {
           </span>
           <div>
             <h1>Sleep Anchor</h1>
-            <p>CBT-I 睡眠日记与窗口训练</p>
+            <p>7 天睡眠基线与温和计划</p>
           </div>
         </div>
-        <nav className="tabs" aria-label="主导航">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={tab.id === activeTab ? 'tab active' : 'tab'}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+        {!isQuietStart && (
+          <nav className="tabs" aria-label="主导航">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={tab.id === activeTab ? 'tab active' : 'tab'}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        )}
       </header>
 
       {!isQuietStart && (
@@ -262,7 +264,7 @@ function App() {
 
       {activeTab === 'start' && (
         <section className={isQuietStart ? 'workspace calm-start' : 'workspace two-col'}>
-          <section className="panel primary-panel onboarding-panel">
+          <section className="onboarding-panel">
             <div className="calm-guide">
               <div className="guide-copy">
                 <span className="eyebrow">先别急着调整睡眠</span>
@@ -299,7 +301,7 @@ function App() {
             </div>
           </section>
 
-          <aside className="panel calm-aside">
+          <aside className="calm-aside">
             <details className="soft-details">
               <summary>
                 <AlertTriangle size={18} />
